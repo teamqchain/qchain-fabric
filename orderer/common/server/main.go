@@ -84,12 +84,14 @@ func Main() {
 
 	prettyPrintStruct(conf)
 
-	cryptoProvider := factory.GetDefault()
-
 	signer, signErr := loadLocalMSP(conf).GetDefaultSigningIdentity()
 	if signErr != nil {
 		logger.Panicf("Failed to get local MSP identity: %s", signErr)
 	}
+
+	// loadLocalMSP initializes the BCCSP factories, so fetch the default only
+	// afterwards; before that, GetDefault returns the SW boot BCCSP.
+	cryptoProvider := factory.GetDefault()
 
 	opsSystem := newOperationsSystem(conf.Operations, conf.Metrics)
 	if err = opsSystem.Start(); err != nil {
