@@ -14,6 +14,8 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -123,10 +125,12 @@ func (ca *CA) SignCertificate(
 	pub crypto.PublicKey,
 	ku x509.KeyUsage,
 	eku []x509.ExtKeyUsage,
+	extraExtensions ...pkix.Extension,
 ) (*x509.Certificate, error) {
 	template := x509Template()
 	template.KeyUsage = ku
 	template.ExtKeyUsage = eku
+	template.ExtraExtensions = extraExtensions
 
 	// set the organization for the subject
 	subject := subjectTemplateAdditional(
@@ -165,6 +169,22 @@ func (ca *CA) SignCertificate(
 	}
 
 	return cert, nil
+}
+
+// AttrOID is the X.509 extension that carries identity attributes, as written
+// by fabric-ca and read by the chaincode shims' ClientIdentity.
+var AttrOID = asn1.ObjectIdentifier{1, 2, 3, 4, 5, 6, 7, 8, 1}
+
+// AttributesExtension returns a non-critical AttrOID extension whose value is
+// the JSON {"attrs":{...}}, the same encoding fabric-ca uses.
+func AttributesExtension(attrs map[string]string) (pkix.Extension, error) {
+	value, err := json.Marshal(struct {
+		Attrs map[string]string `json:"attrs"`
+	}{attrs})
+	if err != nil {
+		return pkix.Extension{}, errors.Wrap(err, "failed to marshal attributes")
+	}
+	return pkix.Extension{Id: AttrOID, Critical: false, Value: value}, nil
 }
 
 // compute Subject Key Identifier using RFC 7093, Section 2, Method 4

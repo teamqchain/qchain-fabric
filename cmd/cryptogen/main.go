@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/hyperledger/fabric/internal/cryptogen/ca"
@@ -52,6 +53,7 @@ type NodeTemplate struct {
 
 type NodeSpec struct {
 	isAdmin            bool
+	attrs              map[string]string
 	Hostname           string   `yaml:"Hostname"`
 	CommonName         string   `yaml:"CommonName"`
 	Country            string   `yaml:"Country"`
@@ -65,8 +67,16 @@ type NodeSpec struct {
 }
 
 type UsersSpec struct {
-	Count              int    `yaml:"Count"`
-	PublicKeyAlgorithm string `yaml:"PublicKeyAlgorithm"`
+	Count              int        `yaml:"Count"`
+	PublicKeyAlgorithm string     `yaml:"PublicKeyAlgorithm"`
+	Specs              []UserSpec `yaml:"Specs"`
+}
+
+// UserSpec names a user explicitly (in addition to the Count users), with
+// optional attributes written into its signing certificate.
+type UserSpec struct {
+	Name  string            `yaml:"Name"`
+	Attrs map[string]string `yaml:"Attrs"`
 }
 
 type OrgSpec struct {
@@ -197,6 +207,14 @@ PeerOrgs:
     Users:
       Count: 1
       PublicKeyAlgorithm: "ecdsa"
+      # Specs: optional users named explicitly (Name@Domain), in addition to
+      # Count. Attrs are written into the signing certificate as the attribute
+      # extension 1.2.3.4.5.6.7.8.1, which chaincode reads through
+      # ClientIdentity (e.g. assertAttributeValue).
+      # Specs:
+      #   - Name: issuer1
+      #     Attrs:
+      #       role: issuer
 
   # ---------------------------------------------------------------------------
   # Org2: See "Org1" for full specification
@@ -340,16 +358,10 @@ func extendPeerOrg(orgSpec OrgSpec) {
 		}
 	}
 
-	publicKeyAlg := getPublicKeyAlg(orgSpec.Users.PublicKeyAlgorithm)
-	// TODO: add ability to specify usernames
-	users := []NodeSpec{}
-	for j := 1; j <= orgSpec.Users.Count; j++ {
-		user := NodeSpec{
-			CommonName:         fmt.Sprintf("%s%d@%s", userBaseName, j, orgName),
-			PublicKeyAlgorithm: publicKeyAlg,
-		}
-
-		users = append(users, user)
+	users, err := userNodeSpecs(orgSpec.Users, orgName)
+	if err != nil {
+		fmt.Printf("Error in user specs for org %s:\n%v\n", orgName, err)
+		os.Exit(1)
 	}
 
 	generateNodes(usersDir, users, signCA, tlsCA, msp.CLIENT, orgSpec.EnableNodeOUs)
@@ -559,16 +571,10 @@ func generatePeerOrg(baseDir string, orgSpec OrgSpec) {
 
 	generateNodes(peersDir, orgSpec.Specs, signCA, tlsCA, msp.PEER, orgSpec.EnableNodeOUs)
 
-	publicKeyAlg := getPublicKeyAlg(orgSpec.Users.PublicKeyAlgorithm)
-	// TODO: add ability to specify usernames
-	users := []NodeSpec{}
-	for j := 1; j <= orgSpec.Users.Count; j++ {
-		user := NodeSpec{
-			CommonName:         fmt.Sprintf("%s%d@%s", userBaseName, j, orgName),
-			PublicKeyAlgorithm: publicKeyAlg,
-		}
-
-		users = append(users, user)
+	users, err := userNodeSpecs(orgSpec.Users, orgName)
+	if err != nil {
+		fmt.Printf("Error in user specs for org %s:\n%v\n", orgName, err)
+		os.Exit(1)
 	}
 	// add an admin user
 	adminUser := NodeSpec{
@@ -637,7 +643,7 @@ func generateNodes(baseDir string, nodes []NodeSpec, signCA *ca.CA, tlsCA *ca.CA
 			if node.isAdmin && nodeOUs {
 				currentNodeType = msp.ADMIN
 			}
-			err := msp.GenerateLocalMSP(nodeDir, node.CommonName, node.SANS, signCA, tlsCA, currentNodeType, nodeOUs, node.PublicKeyAlgorithm)
+			err := msp.GenerateLocalMSPWithAttrs(nodeDir, node.CommonName, node.SANS, signCA, tlsCA, currentNodeType, nodeOUs, node.PublicKeyAlgorithm, node.attrs)
 			if err != nil {
 				fmt.Printf("Error generating local MSP for %v:\n%v\n", node, err)
 				os.Exit(1)
@@ -753,6 +759,38 @@ func getCA(caDir string, spec OrgSpec, name string) *ca.CA {
 		StreetAddress:      spec.CA.StreetAddress,
 		PostalCode:         spec.CA.PostalCode,
 	}
+}
+
+// userNodeSpecs returns the org's users: Count users named User1..UserN, then
+// each explicitly named user in Specs with its attributes. Names must be
+// unique and may not clash with Admin or the generated UserN names.
+func userNodeSpecs(users UsersSpec, orgName string) ([]NodeSpec, error) {
+	publicKeyAlg := getPublicKeyAlg(users.PublicKeyAlgorithm)
+	seen := map[string]bool{adminBaseName: true}
+	var specs []NodeSpec
+	for j := 1; j <= users.Count; j++ {
+		name := fmt.Sprintf("%s%d", userBaseName, j)
+		seen[name] = true
+		specs = append(specs, NodeSpec{
+			CommonName:         fmt.Sprintf("%s@%s", name, orgName),
+			PublicKeyAlgorithm: publicKeyAlg,
+		})
+	}
+	for _, u := range users.Specs {
+		if u.Name == "" || strings.ContainsAny(u.Name, "@/") {
+			return nil, fmt.Errorf("invalid user name %q", u.Name)
+		}
+		if seen[u.Name] {
+			return nil, fmt.Errorf("duplicate user name %q", u.Name)
+		}
+		seen[u.Name] = true
+		specs = append(specs, NodeSpec{
+			CommonName:         fmt.Sprintf("%s@%s", u.Name, orgName),
+			PublicKeyAlgorithm: publicKeyAlg,
+			attrs:              u.Attrs,
+		})
+	}
+	return specs, nil
 }
 
 // getAdminPublicKeyAlg resolves the Admin user's key algorithm: the org's

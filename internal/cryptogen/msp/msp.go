@@ -11,6 +11,7 @@ import (
 	"crypto/ed25519"
 	"crypto/mldsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -53,6 +54,22 @@ func GenerateLocalMSP(
 	nodeOUs bool,
 	keyAlg string,
 ) error {
+	return GenerateLocalMSPWithAttrs(baseDir, name, sans, signCA, tlsCA, nodeType, nodeOUs, keyAlg, nil)
+}
+
+// GenerateLocalMSPWithAttrs is GenerateLocalMSP, additionally writing attrs
+// (if any) into the signing certificate as an attribute extension (ca.AttrOID).
+func GenerateLocalMSPWithAttrs(
+	baseDir,
+	name string,
+	sans []string,
+	signCA *ca.CA,
+	tlsCA *ca.CA,
+	nodeType int,
+	nodeOUs bool,
+	keyAlg string,
+	attrs map[string]string,
+) error {
 	// create folder structure
 	mspDir := filepath.Join(baseDir, "msp")
 	tlsDir := filepath.Join(baseDir, "tls")
@@ -84,6 +101,14 @@ func GenerateLocalMSP(
 	if nodeOUs {
 		ous = []string{nodeOUMap[nodeType]}
 	}
+	var exts []pkix.Extension
+	if len(attrs) > 0 {
+		ext, err := ca.AttributesExtension(attrs)
+		if err != nil {
+			return err
+		}
+		exts = append(exts, ext)
+	}
 	cert, err := signCA.SignCertificate(
 		filepath.Join(mspDir, "signcerts"),
 		name,
@@ -92,6 +117,7 @@ func GenerateLocalMSP(
 		getPublicKey(priv),
 		x509.KeyUsageDigitalSignature,
 		[]x509.ExtKeyUsage{},
+		exts...,
 	)
 	if err != nil {
 		return err
