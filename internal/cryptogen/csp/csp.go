@@ -9,6 +9,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/mldsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
@@ -67,8 +68,9 @@ func parsePrivateKeyPEM(rawKey []byte) (crypto.PrivateKey, error) {
 
 	_, isEcdsa := key.(*ecdsa.PrivateKey)
 	_, isEd25519 := key.(ed25519.PrivateKey)
-	if !isEcdsa && !isEd25519 {
-		return nil, errors.New("pem bytes do not contain an ECDSA nor ed25519 private key")
+	_, isMLDSA := key.(*mldsa.PrivateKey)
+	if !isEcdsa && !isEd25519 && !isMLDSA {
+		return nil, errors.New("pem bytes do not contain an ECDSA, ed25519, nor ML-DSA private key")
 	}
 
 	return key, nil
@@ -85,6 +87,8 @@ func GeneratePrivateKey(keystorePath string, keyAlg string) (crypto.PrivateKey, 
 		priv, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	case "ed25519":
 		_, priv, err = ed25519.GenerateKey(rand.Reader)
+	case "mldsa44":
+		priv, err = mldsa.GenerateKey(mldsa.MLDSA44())
 	default:
 		err = errors.WithMessagef(err, "Unsupported key algorithm: %s", keyAlg)
 	}

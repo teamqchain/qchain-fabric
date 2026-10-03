@@ -324,7 +324,7 @@ func extendPeerOrg(orgSpec OrgSpec) {
 	adminUser := NodeSpec{
 		isAdmin:            true,
 		CommonName:         fmt.Sprintf("%s@%s", adminBaseName, orgName),
-		PublicKeyAlgorithm: ECDSA,
+		PublicKeyAlgorithm: getAdminPublicKeyAlg(orgSpec),
 	}
 	// copy the admin cert to each of the org's peer's MSP admincerts
 	for _, spec := range orgSpec.Specs {
@@ -376,7 +376,7 @@ func extendOrdererOrg(orgSpec OrgSpec) {
 	adminUser := NodeSpec{
 		isAdmin:            true,
 		CommonName:         fmt.Sprintf("%s@%s", adminBaseName, orgName),
-		PublicKeyAlgorithm: ECDSA,
+		PublicKeyAlgorithm: getAdminPublicKeyAlg(orgSpec),
 	}
 
 	for _, spec := range orgSpec.Specs {
@@ -574,7 +574,7 @@ func generatePeerOrg(baseDir string, orgSpec OrgSpec) {
 	adminUser := NodeSpec{
 		isAdmin:            true,
 		CommonName:         fmt.Sprintf("%s@%s", adminBaseName, orgName),
-		PublicKeyAlgorithm: ECDSA,
+		PublicKeyAlgorithm: getAdminPublicKeyAlg(orgSpec),
 	}
 
 	users = append(users, adminUser)
@@ -681,7 +681,7 @@ func generateOrdererOrg(baseDir string, orgSpec OrgSpec) {
 	adminUser := NodeSpec{
 		isAdmin:            true,
 		CommonName:         fmt.Sprintf("%s@%s", adminBaseName, orgName),
-		PublicKeyAlgorithm: ECDSA,
+		PublicKeyAlgorithm: getAdminPublicKeyAlg(orgSpec),
 	}
 
 	// generate an admin for the orderer org
@@ -753,6 +753,16 @@ func getCA(caDir string, spec OrgSpec, name string) *ca.CA {
 		StreetAddress:      spec.CA.StreetAddress,
 		PostalCode:         spec.CA.PostalCode,
 	}
+}
+
+// getAdminPublicKeyAlg resolves the Admin user's key algorithm: the org's
+// Users algorithm if set, else the org's CA algorithm, else the default.
+// Orderer orgs have no Users section, so they fall through to the CA.
+func getAdminPublicKeyAlg(orgSpec OrgSpec) string {
+	if orgSpec.Users.PublicKeyAlgorithm != "" {
+		return orgSpec.Users.PublicKeyAlgorithm
+	}
+	return getPublicKeyAlg(orgSpec.CA.PublicKeyAlgorithm)
 }
 
 func getPublicKeyAlg(pubAlgFromConfig string) (publicKeyAlg string) {

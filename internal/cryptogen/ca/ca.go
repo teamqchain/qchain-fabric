@@ -9,6 +9,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -180,6 +181,8 @@ func computeSKI(privKey crypto.PrivateKey) ([]byte, error) {
 		raw = ecdhKey.Bytes()
 	case ed25519.PrivateKey:
 		raw = kk.Public().(ed25519.PublicKey)
+	case *mldsa.PrivateKey:
+		raw = kk.PublicKey().Bytes()
 	default:
 	}
 
@@ -291,6 +294,8 @@ func getPublicKey(priv crypto.PrivateKey) crypto.PublicKey {
 		return &kk.PublicKey
 	case ed25519.PrivateKey:
 		return kk.Public()
+	case *mldsa.PrivateKey:
+		return kk.Public()
 	default:
 		panic("unsupported key algorithm")
 	}
@@ -306,6 +311,8 @@ func GetSignerFromPrivateKey(priv crypto.PrivateKey) crypto.Signer {
 		return &csp.ED25519Signer{
 			PrivateKey: kk,
 		}
+	case *mldsa.PrivateKey:
+		return kk
 	default:
 		panic("unsupported key algorithm")
 	}
