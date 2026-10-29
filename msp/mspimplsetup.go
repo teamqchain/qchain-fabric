@@ -666,7 +666,9 @@ func (msp *bccspmsp) setupV3(conf *m.FabricMSPConfig) error {
 	}
 
 	msp.supportedPublicKeyAlgorithms[x509.Ed25519] = true
-	msp.supportedPublicKeyAlgorithms[x509.MLDSA] = true
+	for _, alg := range pqcPublicKeyAlgorithms() {
+		msp.supportedPublicKeyAlgorithms[alg] = true
+	}
 
 	err = msp.postSetupV142(conf)
 	if err != nil {

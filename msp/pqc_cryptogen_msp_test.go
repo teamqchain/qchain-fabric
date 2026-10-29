@@ -1,3 +1,5 @@
+//go:build pqc
+
 package msp
 
 import (

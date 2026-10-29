@@ -1,20 +1,15 @@
+//go:build pqc
+
 // ~/fabric/msp/pqc_local_msp_test.go
 package msp
 
 import (
 	"crypto/mldsa"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
-	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/hyperledger/fabric-lib-go/bccsp/factory"
 	pqc "github.com/hyperledger/fabric-lib-go/bccsp-pqc"
+	"github.com/hyperledger/fabric-lib-go/bccsp/factory"
 )
 
 func TestPQCLocalMSPRealCerts(t *testing.T) {
@@ -41,56 +36,9 @@ func TestPQCLocalMSPRealCerts(t *testing.T) {
 		t.Fatalf("mldsa.NewPublicKey: %v", err)
 	}
 
-	// 2. Root CA (native mldsa — proven interoperable with the BCCSP key above).
-	rootPriv, err := mldsa.GenerateKey(mldsa.MLDSA44())
-	if err != nil {
-		t.Fatalf("root GenerateKey: %v", err)
-	}
-	rootTemplate := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "GovernmentMSP-root"},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign,
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-	}
-	rootDER, err := x509.CreateCertificate(rand.Reader, rootTemplate, rootTemplate, rootPriv.PublicKey(), rootPriv)
-	if err != nil {
-		t.Fatalf("root CreateCertificate: %v", err)
-	}
-	rootCert, err := x509.ParseCertificate(rootDER)
-	if err != nil {
-		t.Fatalf("root ParseCertificate: %v", err)
-	}
-
-	// 3. Leaf cert, signed by root, wrapping the BCCSP-generated key.
-	leafTemplate := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: "peer0.government.uae.com"},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-	}
-	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, rootCert, leafPub, rootPriv)
-	if err != nil {
-		t.Fatalf("leaf CreateCertificate: %v", err)
-	}
-
-	// 4. Lay out the real MSP directory structure.
-	writePEM := func(subdir, name string, der []byte) {
-		d := filepath.Join(dir, subdir)
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", d, err)
-		}
-		block := &pem.Block{Type: "CERTIFICATE", Bytes: der}
-		if err := os.WriteFile(filepath.Join(d, name), pem.EncodeToMemory(block), 0o644); err != nil {
-			t.Fatalf("write %s/%s: %v", d, name, err)
-		}
-	}
-	writePEM("cacerts", "ca.pem", rootDER)
-	writePEM("signcerts", "cert.pem", leafDER)
-	writePEM("admincerts", "cert.pem", leafDER)
+	// 2-4. Root CA (native mldsa — proven interoperable with the BCCSP key
+	//      above), a leaf for the BCCSP key, and the MSP directory layout.
+	writeMLDSAMSPDir(t, dir, leafPub)
 
 	// 5. Point the real BCCSP factory at your PQC provider, same keystore dir.
 	bccspConfig := &factory.FactoryOpts{
